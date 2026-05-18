@@ -1,0 +1,88 @@
+name: bench
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: CPU info
+        run: |
+          lscpu | grep -E '^(Architecture|Model name|CPU\(s\)|CPU MHz|Flags)' | head -10
+          echo "AVX2 supported: $(grep -q avx2 /proc/cpuinfo && echo yes || echo no)"
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update -qq
+          sudo apt-get install -y k6
+
+      - name: Build image (Haswell baseline)
+        run: |
+          docker build --build-arg API_ARCH=-march=haswell -t rinha-2026-api .
+
+      - name: Up stack
+        run: |
+          docker compose up -d
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9999/ready >/dev/null 2>&1; then
+              echo "ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "stack failed to come up" >&2
+          docker compose logs
+          exit 1
+
+      - name: Run k6 (3 iterations)
+        run: |
+          mkdir -p bench-results
+          for i in 1 2 3; do
+            k6 run --quiet test/test.js
+            cp test/results.json bench-results/run-${i}.json
+          done
+
+      - name: Summary
+        run: |
+          python3 - <<'PY' | tee -a $GITHUB_STEP_SUMMARY
+          import json, glob, statistics
+          runs = sorted(glob.glob('bench-results/run-*.json'))
+          print('## Bench results\n')
+          print('| run | p99 | score | errors |')
+          print('|---|---|---|---|')
+          scores, p99s = [], []
+          for path in runs:
+              d = json.load(open(path))
+              s = d['scoring']['final_score']
+              p = d['p99']
+              br = d['scoring']['breakdown']
+              errs = br['false_positive_detections'] + br['false_negative_detections'] + br['http_errors']
+              scores.append(s)
+              p99s.append(p)
+              print(f"| {path} | {p} | {s:.2f} | {errs} |")
+          print()
+          if scores:
+              print(f'**Best score:** {max(scores):.2f}  ')
+              print(f'**Mean score:** {statistics.mean(scores):.2f}  ')
+              print(f'**p99 range:** {min(p99s)} → {max(p99s)}  ')
+          PY
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results/
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs

@@ -1,0 +1,52 @@
+services:
+  api1:
+    build: .
+    image: rinha-2026-api
+    command: ["/app/api", "/app/index.bin", "/sockets/api1.sock"]
+    volumes:
+      - sockets:/sockets
+    networks: [app]
+    ulimits:
+      memlock: -1
+    deploy:
+      resources:
+        limits:
+          cpus: "0.45"
+          memory: "160M"
+
+  api2:
+    image: rinha-2026-api
+    depends_on: [api1]
+    command: ["/app/api", "/app/index.bin", "/sockets/api2.sock"]
+    volumes:
+      - sockets:/sockets
+    networks: [app]
+    ulimits:
+      memlock: -1
+    deploy:
+      resources:
+        limits:
+          cpus: "0.45"
+          memory: "160M"
+
+  lb:
+    image: rinha-2026-api
+    depends_on: [api1, api2]
+    command: ["/app/lb", "9999", "/sockets/api1.sock", "/sockets/api2.sock"]
+    volumes:
+      - sockets:/sockets
+    ports:
+      - "9999:9999"
+    networks: [app]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: "30M"
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  sockets:

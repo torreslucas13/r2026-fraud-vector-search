@@ -1,0 +1,9 @@
+build_index
+api
+lb
+index.bin
+references.json
+references.json.gz
+test/results.json
+*.o
+.DS_Store

@@ -1,0 +1,7 @@
+{
+    "participants": ["Lucas Torres"],
+    "social": ["https://github.com/torreslucas13"],
+    "source-code-repo": "https://github.com/torreslucas13/r2026-fraud-vector-search",
+    "stack": ["c", "avx2", "ivf", "epoll"],
+    "open_to_work": false
+}
